@@ -2817,23 +2817,29 @@ def _gh_repo_edit_default_branch(store: Path, branch: str) -> tuple[bool, str]:
     if default_hosts.is_dir() and "GH_CONFIG_DIR" not in env:
         env["GH_CONFIG_DIR"] = str(default_hosts)
 
+    if not shutil.which("gh"):
+        return False, "gh CLI binary not found on PATH"
+
     attempts = [
         env,
         {k: v for k, v in env.items() if k != "GH_CONFIG_DIR"},
     ]
     last_err = ""
     for attempt_env in attempts:
-        res = subprocess.run(
-            ["gh", "repo", "edit", f"--default-branch={branch}"],
-            cwd=str(store),
-            capture_output=True,
-            text=True,
-            env=attempt_env,
-            shell=(os.name == "nt"),
-        )
-        if res.returncode == 0:
-            return True, (res.stdout or "").strip() or f"default branch → {branch}"
-        last_err = ((res.stderr or "") + (res.stdout or "")).strip()
+        try:
+            res = subprocess.run(
+                ["gh", "repo", "edit", f"--default-branch={branch}"],
+                cwd=str(store),
+                capture_output=True,
+                text=True,
+                env=attempt_env,
+                shell=(os.name == "nt"),
+            )
+            if res.returncode == 0:
+                return True, (res.stdout or "").strip() or f"default branch → {branch}"
+            last_err = ((res.stderr or "") + (res.stdout or "")).strip()
+        except FileNotFoundError:
+            return False, "gh CLI binary not found on PATH"
     return False, last_err or "gh repo edit failed"
 
 

@@ -95,10 +95,14 @@ def _parse_last_user_comment_and_timestamp(
                                 and not raw_comment.startswith("<command-name>")
                             ):
                                 user_comment = raw_comment
-                                created_at = data.get("created_at") or data.get("timestamp")
+                                created_at = data.get("created_at") or data.get(
+                                    "timestamp"
+                                )
                                 if created_at:
                                     try:
-                                        file_mtime = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                                        file_mtime = datetime.fromisoformat(
+                                            str(created_at).replace("Z", "+00:00")
+                                        )
                                     except ValueError:
                                         pass
                                 break

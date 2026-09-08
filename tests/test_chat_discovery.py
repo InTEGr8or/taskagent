@@ -29,7 +29,7 @@ def test_agent_cli_registry_has_chat_log_patterns():
 
     assert registry["claude"].chat_parser_type == "jsonl"
     assert registry["aider"].chat_parser_type == "markdown"
-    assert registry["agy"].chat_parser_type == "json"
+    assert registry["agy"].chat_parser_type == "jsonl"
 
 
 def test_agent_cli_info_defaults():

@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Dict, Set, Union
+from typing import Any, List, Optional, Tuple, Dict, Set, Union
 from pathlib import Path
 from datetime import datetime
 from rich.console import Console
@@ -2670,6 +2670,10 @@ def cmd_store(console: Console, args) -> None:
             console.print(f"[dim]Subject origin: {info['subject_origin']}[/dim]")
         return
 
+    if sub == "yazi":
+        cmd_yazi(console, None, args)
+        return
+
     if sub == "migrate":
         refuse_if_native_windows_store_ops(console, "ta store migrate")
         host = _store_host_from_args(console, args)
@@ -2717,6 +2721,114 @@ def cmd_store(console: Console, args) -> None:
         return
 
     console.print(f"[red]Unknown store command: {sub}[/red]")
+
+
+def cmd_yazi(console: Console, manager: Any, args: Any) -> None:
+    """Open Yazi terminal file manager in the active store directory."""
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    # Determine store directory
+    target_dir: Optional[Path] = None
+    if manager and hasattr(manager, "issues_root") and manager.issues_root:
+        target_dir = Path(manager.issues_root)
+    else:
+        from taskagent.store_registry import inspect_host
+
+        host = getattr(args, "path", None) or Path.cwd()
+        try:
+            report = inspect_host(host)
+            canonical = Path(report["canonical_store_path"])
+            entry = report.get("registry_entry") or {}
+            entry_path = Path(entry["store_path"]) if entry.get("store_path") else None
+            target_dir = (
+                entry_path if (entry_path and entry_path.exists()) else canonical
+            )
+        except Exception:
+            target_dir = Path.cwd()
+
+    if target_dir and not target_dir.exists():
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    yazi_bin = shutil.which("yazi")
+
+    if not yazi_bin:
+        console.print(
+            "[bold yellow]Yazi file manager ('yazi') is not installed on PATH.[/bold yellow]"
+        )
+        console.print(
+            "[dim]Yazi is an ultra-fast terminal file manager for browsing task stores.[/dim]\n"
+        )
+
+        installed_ok = False
+        can_install = (
+            shutil.which("uv") is not None or shutil.which("cargo") is not None
+        )
+
+        if can_install and sys.stdin.isatty():
+            try:
+                response = (
+                    input("Would you like to install yazi now? [Y/n] ").strip().lower()
+                )
+            except (EOFError, KeyboardInterrupt):
+                response = "n"
+
+            if response in ("", "y", "yes"):
+                console.print("[cyan]Installing yazi...[/cyan]")
+                if shutil.which("uv"):
+                    install_cmd = ["uv", "tool", "install", "yazi-cli"]
+                else:
+                    install_cmd = [
+                        "cargo",
+                        "install",
+                        "--locked",
+                        "yazi-cli",
+                        "yazi-fm",
+                    ]
+
+                try:
+                    res = subprocess.run(install_cmd)
+                    if res.returncode == 0 and shutil.which("yazi"):
+                        yazi_bin = shutil.which("yazi")
+                        installed_ok = True
+                        console.print(
+                            "[bold green]✓ Yazi installed successfully![/bold green]\n"
+                        )
+                    else:
+                        console.print(
+                            "[red]Installation did not complete cleanly or yazi binary was not found on PATH.[/red]\n"
+                        )
+                except Exception as e:
+                    console.print(f"[red]Installation error:[/red] {e}\n")
+
+        if not installed_ok:
+            console.print(
+                "[bold cyan]To install Yazi manually, run one of the following:[/bold cyan]"
+            )
+            console.print("  • [yellow]uv tool install yazi-cli[/yellow]")
+            console.print(
+                "  • [yellow]cargo install --locked yazi-cli yazi-fm[/yellow]"
+            )
+            console.print("  • [yellow]brew install yazi[/yellow] (macOS)")
+            console.print(
+                "  • [yellow]sudo apt install yazi[/yellow] (Linux package manager)\n"
+            )
+            console.print(f"[bold]Store Directory:[/bold] {target_dir}")
+            return
+
+    if not yazi_bin:
+        return
+
+    console.print(f"[dim]Opening Yazi in: {target_dir}[/dim]")
+    try:
+        subprocess.run([yazi_bin, str(target_dir)])
+    except Exception as e:
+        console.print(f"[red]Failed to launch yazi:[/red] {e}")
 
 
 def cmd_mr_list(console: Console, manager: TaskAgent):
@@ -6759,6 +6871,15 @@ TA_STRATEGY_COOLDOWN_HOURS environment variable.
         default=None,
         help="Fuzzy moniker/host match (e.g. InTEGr8or/task-agent)",
     )
+    store_yazi_p = store_sub.add_parser(
+        "yazi",
+        help="Open Yazi terminal file manager in the active task store directory",
+    )
+    store_yazi_p.add_argument(
+        "--path",
+        default=None,
+        help="Host project path (default: cwd)",
+    )
 
     delete_parser = subparsers.add_parser(
         "delete", help="Soft-delete a task (archive without commit, restorable)"
@@ -6818,6 +6939,13 @@ TA_STRATEGY_COOLDOWN_HOURS environment variable.
 
     path_parser = subparsers.add_parser("path", help="Get the absolute path to a task")
     path_parser.add_argument("slug", help="Task slug")
+
+    yazi_parser = subparsers.add_parser(
+        "yazi", help="Open Yazi terminal file manager in the active store directory"
+    )
+    yazi_parser.add_argument(
+        "--path", default=None, help="Host project path (default: cwd)"
+    )
 
     new_parser = subparsers.add_parser("new")
     new_parser.add_argument("title", nargs="?")
@@ -6955,6 +7083,8 @@ TA_STRATEGY_COOLDOWN_HOURS environment variable.
             fmt=getattr(args, "format", "default"),
             pending_count=getattr(args, "pending", False),
         )
+    elif args.command == "yazi":
+        cmd_yazi(console, manager, args)
     elif args.command == "path":
         issue_file = manager.find_issue_file(args.slug)
         if issue_file:
